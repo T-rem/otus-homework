@@ -1,0 +1,44 @@
+version: '2'
+services:
+
+  web:
+    image: "dragontek/octobercms"
+    ports:
+     - "8080:80"
+
+  postgres:
+    image: postgres
+    environment:
+      POSTGRES_DB: test
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - 5432:5432
+
+  prometheus:
+    image: bitnami/prometheus
+    volumes:
+        - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+    ports:
+      - 9090:9090
+
+  blackbox-exporter:
+    image: prom/blackbox-exporter:latest
+    volumes:
+      - ./exporter/blackbox.yml:/config/blackbox.yml
+    command:
+      - '--config.file=/config/blackbox.yml'
+    ports:
+      - "9115:9115"
+  
+  postgres-exporter:
+    image: bitnami/postgres-exporter:latest
+    volumes:
+      - ./exporter/postgres.yml:/config/postgres.yml
+    command:
+      - '--config.file=/config/postgres.yml'
+    ports:
+      - "9187:9187"
+    
