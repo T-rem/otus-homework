@@ -1,0 +1,84 @@
+---
+version: '3.1'
+
+volumes:
+    prometheus_data: {}
+    minio_data: {}
+
+services:
+    prometheus:
+        image: prom/prometheus:v2.49.1
+        volumes:
+            - ./prometheus/:/etc/prometheus/
+            - prometheus_data:/prometheus
+        command:
+            - '--config.file=/etc/prometheus/prometheus.yml'
+            - '--storage.tsdb.path=/prometheus'
+            - '--storage.tsdb.max-block-duration=30m'
+            - '--storage.tsdb.min-block-duration=30m'
+            - '--web.enable-lifecycle'
+            - '--web.console.libraries=/usr/share/prometheus/console_libraries'
+            - '--web.console.templates=/usr/share/prometheus/consoles'
+        ports:
+            - 9081:9090
+
+    thanos-sidecar:
+        image: quay.io/thanos/thanos:v0.31.0
+        volumes:
+            - ./thanos/:/etc/thanos/
+            - prometheus_data:/prometheus
+        command:
+            - 'sidecar'
+            - '--tsdb.path=/prometheus'
+            - '--prometheus.url=http://prometheus:9090'
+            - '--grpc-address=0.0.0.0:10091'
+            - '--http-address=0.0.0.0:10902'
+            - '--objstore.config-file=/etc/thanos/bucket_config.yml'
+
+    thanos-querier:
+        image: quay.io/thanos/thanos:v0.31.0
+        command:
+            - 'query'
+            - '--grpc-address=0.0.0.0:10091'
+            - '--http-address=0.0.0.0:10902'
+            - '--query.replica-label=replica'
+            - '--store=thanos-sidecar:10091'
+            - '--store=thanos-store:10091'
+            - '--store=thanos-ruler:10091'
+        ports:
+            - 10902:10902
+
+    thanos-store:
+        image: quay.io/thanos/thanos:v0.31.0
+        volumes:
+            - ./thanos/:/etc/thanos/
+        command:
+            - 'store'
+            - '--grpc-address=0.0.0.0:10091'
+            - '--http-address=0.0.0.0:10902'
+            - '--data-dir=/tmp/thanos/store'
+            - '--objstore.config-file=/etc/thanos/bucket_config.yml'
+
+    thanos-compactor:
+        image: quay.io/thanos/thanos:v0.31.0
+        volumes:
+            - ./thanos/:/etc/thanos/
+        command:
+            - 'compact'
+            - '--log.level=debug'
+            - '--data-dir=/data'
+            - '--objstore.config-file=/etc/thanos/bucket_config.yml'
+            - '--wait'
+
+    minio:
+        image: minio/minio:RELEASE.2020-05-01T22-19-14Z
+        volumes:
+            - minio_data:/data
+        entrypoint: sh
+        command: -c 'mkdir -p /data/demo-bucket && /usr/bin/minio server /data'
+        environment:
+            - MINIO_ACCESS_KEY=smth
+            - MINIO_SECRET_KEY=Need8Chars
+            - MINIO_PROMETHEUS_AUTH_TYPE=public
+        ports:
+            - 9000:9000
